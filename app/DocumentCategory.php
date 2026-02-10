@@ -9,7 +9,8 @@ class DocumentCategory extends Model {
     protected $fillable = [
         'name',
         'description',
-        'isActive'
+        'isActive',
+        'created_by'
     ];
     
     public function documents() {
