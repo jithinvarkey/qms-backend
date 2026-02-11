@@ -36,8 +36,8 @@ class DocumentCategoryController extends Controller {
         $category = DocumentCategory::create([
                     'name' => $validated['name'],
                     'description' => $validated['description'] ?? null,
-                    'is_active' => 1,
-                    'created_by' =>Auth::id()
+                    'isActive' => 1,
+                    'created_by' => Auth::id()
         ]);
 
         return response()->json([
@@ -80,6 +80,17 @@ class DocumentCategoryController extends Controller {
                     'success' => true,
                     'message' => 'Status updated',
                     'data' => $category
+        ]);
+    }
+
+    public function dropdown() {
+        $categories = DocumentCategory::where('isActive', 1)
+                ->orderBy('name')
+                ->get(['id', 'name']);
+
+        return response()->json([
+                    'success' => true,
+                    'data' => $categories
         ]);
     }
 }
