@@ -16,3 +16,7 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', function () {
     return view('welcome');
 });
+Route::middleware(['auth'])->group(function () {
+    Route::get('/document/view/{id}', 'Api/DocumentController@view');
+    Route::get('/document/download/{id}', 'Api/DocumentController@download');
+});

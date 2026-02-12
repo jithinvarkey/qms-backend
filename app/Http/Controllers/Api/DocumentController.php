@@ -77,7 +77,22 @@ class DocumentController extends Controller {
                                 ], 422);
             }
         }
-        $path = $file->store('documents', 'public');
+
+
+        $typeName = strtolower(trim($type->name)); // form, policy, manual
+
+        $folder = 'documents/' . $typeName . '/' . $validated['document_code'];
+
+        $filename = 'v' . $validated['version'] . '.' . $extension;
+
+        if (Storage::exists($folder . '/' . $filename)) {
+            return response()->json([
+                        'message' => 'Version already exists.'
+                            ], 422);
+        }
+
+// Store in PRIVATE storage (NOT public)
+        $path = $file->storeAs($folder, $filename);
 
         $document = Document::create(array_merge(
                                 $validated,
@@ -181,5 +196,47 @@ class DocumentController extends Controller {
                     'success' => true,
                     'message' => 'Document deleted'
         ]);
+    }
+
+    public function view($id) {
+        $document = Document::findOrFail($id);
+
+        if (!Storage::exists($document->file_path)) {
+            abort(404);
+        }
+
+        $type = strtolower(trim($document->type->name));
+        $extension = strtolower(pathinfo($document->file_path, PATHINFO_EXTENSION));
+
+        // Forms → always preview
+        if ($type === 'form') {
+            return response()->file(storage_path('app/' . $document->file_path));
+        }
+
+        // Others → only pdf/jpg
+        if (in_array($extension, ['pdf', 'jpg', 'jpeg', 'png'])) {
+            return response()->file(storage_path('app/' . $document->file_path));
+        }
+
+        abort(403, 'Preview not allowed');
+    }
+
+    public function download($id) {
+        $document = Document::findOrFail($id);
+
+        if (!Storage::exists($document->file_path)) {
+            abort(404);
+        }
+
+        $type = strtolower(trim($document->type->name));
+
+        // ONLY allow Forms download
+        if ($type !== 'form') {
+            abort(403, 'Download not allowed');
+        }
+
+        return response()->download(
+                        storage_path('app/' . $document->file_path)
+        );
     }
 }

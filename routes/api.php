@@ -21,6 +21,11 @@ use App\Http\Controllers\Api\DocumentTypeController;
 
 // routes/api.php
 Route::post('/login', [AuthController::class, 'login']);
+Route::middleware(['auth:api'])->group(function () {
+
+    
+
+});
 
 Route::middleware('auth:sanctum')->group(function () {
 
@@ -53,5 +58,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('/documents/{id}/submit', [DocumentController::class, 'submitForReview']);
     Route::patch('/documents/{id}/approve', [DocumentController::class, 'approve']);
     Route::patch('/documents/{id}/reject', [DocumentController::class, 'reject']);
+    
+    Route::get('/documents/view/{id}', [DocumentController::class, 'view']);
+    Route::get('/documents/download/{id}',[DocumentController::class, 'download']);
 });
 
