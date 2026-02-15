@@ -9,7 +9,8 @@ class DocumentType extends Model {
    protected $fillable = [
         'name',
         'description',
-        'isActive'
+        'isActive',
+       'created_by'
     ];
     public function documents() {
         return $this->hasMany(Document::class);
