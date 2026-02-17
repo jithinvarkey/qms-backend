@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\DocumentCategoryController;
 use App\Http\Controllers\Api\DocumentTypeController;
+use App\Http\Controllers\Api\RequestController;
 
 /*
   |--------------------------------------------------------------------------
@@ -63,6 +64,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Requests
     Route::apiResource('requests', 'Api\RequestController');
+   Route::post('requests/create', [RequestController::class, 'store']);
 
     Route::post('requests/{id}/submit', 'Api\RequestController@submit');
     Route::post('requests/{id}/change-status', 'Api\RequestController@changeStatus');

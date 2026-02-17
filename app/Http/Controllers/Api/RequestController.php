@@ -10,6 +10,7 @@ use App\RequestHistory;
 use App\RequestAttachment;
 use Auth;
 use DB;
+use Illuminate\Support\Facades\Storage;
 
 class RequestController extends Controller {
 
@@ -29,6 +30,7 @@ class RequestController extends Controller {
             'title' => 'required',
             'department_id' => 'required',
             'request_type_id' => 'required'
+            
         ]);
 
         DB::beginTransaction();
