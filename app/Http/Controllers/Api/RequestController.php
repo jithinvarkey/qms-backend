@@ -30,7 +30,6 @@ class RequestController extends Controller {
             'title' => 'required',
             'department_id' => 'required',
             'request_type_id' => 'required'
-            
         ]);
 
         DB::beginTransaction();
@@ -45,7 +44,7 @@ class RequestController extends Controller {
                         'description' => $request->description,
                         'department_id' => $request->department_id,
                         'request_type_id' => $request->request_type_id,
-                        'status_id' => $draftStatus->id,
+                        'status' => $draftStatus->id,
                         'created_by' => $request->user()->id
             ]);
 
@@ -103,6 +102,22 @@ class RequestController extends Controller {
                             ], 500);
         }
     }
+    
+    // 🔹 View Request with all relations
+    public function show($id)
+    {
+        $request = QmsRequest::with([
+            'department',
+            'type',
+            'creator',
+            'status',
+            'comments.user',
+            'attachments.user',
+            'histories.user'
+        ])->findOrFail($id);
+
+        return response()->json($request);
+    }
 
     public function submit($id) {
         DB::beginTransaction();
@@ -116,7 +131,7 @@ class RequestController extends Controller {
             $oldStatus = $request->status_id;
 
             $request->update([
-                'status_id' => $submitted->id
+                'status' => $submitted->id
             ]);
 
             RequestHistory::create([
@@ -135,5 +150,43 @@ class RequestController extends Controller {
             DB::rollback();
             return response()->json(['success' => false], 500);
         }
+    }
+
+    public function approve($id) {
+        $request = RequestModel::findOrFail($id);
+
+        $request->status = 'Approved';
+        $request->save();
+
+        // Log entry
+        $request->logs()->create([
+            'user_id' => Auth::id(),
+            'action' => 'Approved the request'
+        ]);
+
+        return response()->json([
+                    'message' => 'Request approved successfully'
+        ]);
+    }
+
+    // 🔹 Reject
+    public function reject(Request $req, $id) {
+        $request = RequestModel::findOrFail($id);
+
+        $req->validate([
+            'reason' => 'required'
+        ]);
+
+        $request->status = 'Rejected';
+        $request->save();
+
+        $request->logs()->create([
+            'user_id' => Auth::id(),
+            'action' => 'Rejected the request. Reason: ' . $req->reason
+        ]);
+
+        return response()->json([
+                    'message' => 'Request rejected successfully'
+        ]);
     }
 }
