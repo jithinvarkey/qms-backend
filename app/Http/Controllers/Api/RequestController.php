@@ -29,7 +29,8 @@ class RequestController extends Controller {
         $request->validate([
             'title' => 'required',
             'department_id' => 'required',
-            'request_type_id' => 'required'
+            'request_type_id' => 'required',
+            'attachments.*' => 'file|max:2048'
         ]);
 
         DB::beginTransaction();
@@ -54,15 +55,25 @@ class RequestController extends Controller {
               |--------------------------------------------------------------------------
              */
 
+            if ($request->hasFile('attachments') && count($request->file('attachments')) > 3) {
+                return response()->json([
+                            'message' => 'Maximum 3 attachments allowed'
+                                ], 422);
+            }
             if ($request->hasFile('attachments')) {
+
+                $folder = 'requests/' . $newRequest->request_no;
 
                 foreach ($request->file('attachments') as $file) {
 
-                    $path = $file->store('qms/attachments', 'public');
+
+                    $fileName = uniqid() . '.' . $file->getClientOriginalExtension();
+
+                    $path = $file->storeAs($folder, $fileName);
 
                     RequestAttachment::create([
                         'request_id' => $newRequest->id,
-                        'file_name' => $file->getClientOriginalName(),
+                        'file_name' => $fileName,
                         'file_path' => $path,
                         'uploaded_by' => $request->user()->id
                     ]);
@@ -102,19 +113,18 @@ class RequestController extends Controller {
                             ], 500);
         }
     }
-    
+
     // 🔹 View Request with all relations
-    public function show($id)
-    {
+    public function show($id) {
         $request = QmsRequest::with([
-            'department',
-            'type',
-            'creator',
-            'status',
-            'comments.user',
-            'attachments.user',
-            'histories.user'
-        ])->findOrFail($id);
+                    'department',
+                    'type',
+                    'creator',
+                    'status',
+                    'comments.user',
+                    'attachments.uploader',
+                    'histories.user'
+                ])->findOrFail($id);
 
         return response()->json($request);
     }

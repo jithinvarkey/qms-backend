@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\DocumentCategoryController;
 use App\Http\Controllers\Api\DocumentTypeController;
 use App\Http\Controllers\Api\RequestController;
+use App\Http\Controllers\Api\RequestAttachmentController;
 
 /*
   |--------------------------------------------------------------------------
@@ -26,7 +27,7 @@ Route::middleware(['auth:api'])->group(function () {
     
 });
 Route::prefix('v1')->group(function () {
-   
+
     Route::post('/login', [AuthController::class, 'login']);
     Route::middleware('auth:sanctum')->group(function () {
 
@@ -63,16 +64,15 @@ Route::prefix('v1')->group(function () {
         Route::get('/documents/view/{id}', [DocumentController::class, 'view']);
         Route::get('/documents/download/{id}', [DocumentController::class, 'download']);
 
-
         // Master Data
         Route::get('statuses', 'Api\MasterController@statuses');
         Route::get('request-types', 'Api\MasterController@types');
         Route::get('departments', 'Api\MasterController@departments');
-        
+
         //QMS Request related routing
         Route::apiResource('requests', 'Api\RequestController');
         Route::prefix('requests')->group(function () {
-           
+
             // Requests
             Route::post('/', [RequestController::class, 'store']);
             // 🔹 View single request (with relations)
@@ -94,6 +94,10 @@ Route::prefix('v1')->group(function () {
             // Attachments
             Route::post('{id}/attachments', 'Api\RequestAttachmentController@store');
             Route::delete('attachments/{id}', 'Api\RequestAttachmentController@destroy');
+            Route::get('documents/preview/{id}', [RequestAttachmentController::class,'preview']);
+            Route::get('documents/download/{id}', [RequestAttachmentController::class,'download']);
+            Route::get('{id}/attachments', 'Api\RequestAttachmentController@list');
+            
 
             // Approvals
             Route::post('approvals/{id}/approve', 'Api\RequestApprovalController@approve');
