@@ -52,7 +52,7 @@ class QmsRequest extends Model
 
     public function comments()
     {
-        return $this->hasMany(RequestComment::class, 'request_id');
+        return $this->hasMany(RequestComment::class, 'request_id') ->orderBy('created_at', 'desc');;
     }
 
     public function attachments()

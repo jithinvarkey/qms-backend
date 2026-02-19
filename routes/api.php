@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\DocumentCategoryController;
 use App\Http\Controllers\Api\DocumentTypeController;
 use App\Http\Controllers\Api\RequestController;
 use App\Http\Controllers\Api\RequestAttachmentController;
+use App\Http\Controllers\Api\RequestCommentController;
 
 /*
   |--------------------------------------------------------------------------
@@ -82,7 +83,8 @@ Route::prefix('v1')->group(function () {
             Route::post('{id}/change-status', 'Api\RequestController@changeStatus');
 
             // 🔹 Add comment
-            Route::post('{id}/comments', [RequestCommentController::class, 'store']);
+            Route::post('comments', [RequestCommentController::class, 'store']);
+            Route::get('{id}/comments', [RequestCommentController::class,'index']);
 
             // 🔹 Approve / Reject
             Route::post('{id}/approve', [RequestController::class, 'approve']);

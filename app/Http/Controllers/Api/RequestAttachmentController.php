@@ -5,37 +5,61 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Auth;
-use DB;
 use Illuminate\Support\Facades\Storage;
 use App\RequestAttachment;
 use App\RequestHistory;
+use Illuminate\Support\Facades\DB;
 
 class RequestAttachmentController extends Controller {
 
     public function store(Request $request, $id) {
-        $file = $request->file('file');
-        $qmsRequest = \App\QmsRequest::findOrFail($id);
+        DB::beginTransaction();
 
-        $folder = 'requests/' . $qmsRequest->request_no;
+        try {
+            $file = $request->file('file');
+            $qmsRequest = \App\QmsRequest::findOrFail($id);
 
-        $fileName = uniqid() . '.' . $file->getClientOriginalExtension();
+            $folder = 'requests/' . $qmsRequest->request_no;
 
-        $path = $file->storeAs($folder, $fileName);
+            $fileName = uniqid() . '.' . $file->getClientOriginalExtension();
 
-        $attachment = RequestAttachment::create([
+            $path = $file->storeAs($folder, $fileName);
+
+            $attachment = RequestAttachment::create([
+                        'request_id' => $id,
+                        'file_name' => $file->getClientOriginalName(),
+                        'file_path' => $path,
+                        'uploaded_by' => Auth::id()
+            ]);
+            if ($attachment) {
+                // ✅ Store History
+                RequestHistory::create([
                     'request_id' => $id,
-                    'file_name' => $file->getClientOriginalName(),
-                    'file_path' => $path,
-                    'uploaded_by' => Auth::id()
-        ]);
+                    'action' => 'Document Attached',
+                    'remarks' => 'New document uploaded: ' . $fileName,
+                    'changed_by' => auth()->id()
+                ]);
+            }
 
-        // ✅ Store History
-        RequestHistory::create([
-            'request_id' => $id,
-            'action' => 'Document Attached',
-            'remarks' => 'New document uploaded: ' . $fileName,
-            'changed_by' => auth()->id()
-        ]);
+
+            DB::commit();
+
+            return response()->json([
+                        'message' => 'Document added successfully',
+                        
+                            ], 201);
+        } catch (\Exception $e) {
+
+            DB::rollBack();
+
+            return response()->json([
+                        'message' => 'Something went wrong',
+                        'error' => $e->getMessage()
+                            ], 500);
+        }
+
+
+
 
         return response()->json($attachment);
     }
@@ -79,8 +103,7 @@ class RequestAttachmentController extends Controller {
         $perPage = $request->get('per_page', 10);
         $requests = RequestAttachment::with([
                     'uploader',
-                    
-                ])->where('request_id',$id )->latest()->paginate($perPage);
+                ])->where('request_id', $id)->latest()->paginate($perPage);
 
         return response()->json($requests);
     }
