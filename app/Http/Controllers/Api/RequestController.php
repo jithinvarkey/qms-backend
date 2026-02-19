@@ -136,25 +136,24 @@ class RequestController extends Controller {
 
             $request = QmsRequest::findOrFail($id);
 
-            $submitted = Status::where('code', 'submitted')->first();
-
-            $oldStatus = $request->status_id;
+            if ($request->status !== 'draft') {
+                return response()->json(['message' => 'Already submitted'], 400);
+            }
 
             $request->update([
-                'status' => $submitted->id
+                'status' => 'review'
             ]);
 
             RequestHistory::create([
-                'request_id' => $request->id,
+                'request_id' => $id,
                 'action' => 'Submitted',
-                'old_status' => $oldStatus,
-                'new_status' => $submitted->id,
-                'changed_by' => Auth::id()
+                'remarks' => 'Request submitted for manager review',
+                'changed_by' => auth()->id()
             ]);
 
             DB::commit();
 
-            return response()->json(['success' => true]);
+            return response()->json(['success' => true, 'message' => 'Submitted successfully']);
         } catch (\Exception $e) {
 
             DB::rollback();
@@ -165,38 +164,64 @@ class RequestController extends Controller {
     public function approve($id) {
         $request = RequestModel::findOrFail($id);
 
-        $request->status = 'Approved';
-        $request->save();
+        if ($request->status !== 'review') {
+            return response()->json(['message' => 'Invalid status'], 400);
+        }
 
-        // Log entry
-        $request->logs()->create([
-            'user_id' => Auth::id(),
-            'action' => 'Approved the request'
+        $request->update([
+            'status' => 'open'
         ]);
 
-        return response()->json([
-                    'message' => 'Request approved successfully'
+        RequestHistory::create([
+            'request_id' => $id,
+            'action' => 'Approved',
+            'remarks' => 'Approved by Manager and forwarded to Quality',
+            'changed_by' => auth()->id()
         ]);
+
+        return response()->json(['message' => 'Approved']);
     }
 
     // 🔹 Reject
     public function reject(Request $req, $id) {
+        $req->validate([
+            'reason' => 'required|string'
+        ]);
+
         $request = RequestModel::findOrFail($id);
 
+        $request->update([
+            'status' => 'rejected'
+        ]);
+
+        RequestHistory::create([
+            'request_id' => $id,
+            'action' => 'Rejected',
+            'remarks' => $req->reason,
+            'changed_by' => auth()->id()
+        ]);
+
+        return response()->json(['message' => 'Rejected']);
+    }
+
+    public function updateStatus(Request $req, $id) {
         $req->validate([
-            'reason' => 'required'
+            'status' => 'required|in:open,pending,under_process,closed'
         ]);
 
-        $request->status = 'Rejected';
-        $request->save();
+        $request = RequestModel::findOrFail($id);
 
-        $request->logs()->create([
-            'user_id' => Auth::id(),
-            'action' => 'Rejected the request. Reason: ' . $req->reason
+        $request->update([
+            'status' => $req->status
         ]);
 
-        return response()->json([
-                    'message' => 'Request rejected successfully'
+        RequestHistory::create([
+            'request_id' => $id,
+            'action' => 'Status Updated',
+            'remarks' => 'Changed to ' . $req->status,
+            'changed_by' => auth()->id()
         ]);
+
+        return response()->json(['message' => 'Status updated']);
     }
 }
