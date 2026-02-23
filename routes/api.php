@@ -37,7 +37,7 @@ Route::prefix('v1')->group(function () {
             return auth()->user()->load('roles');
         });
 
-        Route::middleware('role:admin')->group(function () {
+        Route::middleware('role:Admin|Manager|Quality Manager|User|Quality officer')->group(function () {
             Route::post('/issues', [QualityIssueController::class, 'store']);
         });
         //    Document category handling
@@ -79,7 +79,7 @@ Route::prefix('v1')->group(function () {
             // 🔹 View single request (with relations)
             Route::get('{id}', [RequestController::class, 'show']);
 
-            Route::post('{id}/submit', 'Api\RequestController@submit');
+            Route::patch('{id}/submit', 'Api\RequestController@submit');
             Route::post('{id}/change-status', 'Api\RequestController@changeStatus');
 
             // 🔹 Add comment
@@ -87,8 +87,8 @@ Route::prefix('v1')->group(function () {
             Route::get('{id}/comments', [RequestCommentController::class,'index']);
 
             // 🔹 Approve / Reject
-            Route::post('{id}/approve', [RequestController::class, 'approve']);
-            Route::post('{id}/reject', [RequestController::class, 'reject']);
+            Route::patch('{id}/approve', [RequestController::class, 'approve']);
+            Route::patch('{id}/reject', [RequestController::class, 'reject']);
 
             // 🔹 Logs
             Route::get('{id}/logs', [RequestLogController::class, 'index']);

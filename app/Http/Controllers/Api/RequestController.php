@@ -14,13 +14,58 @@ use Illuminate\Support\Facades\Storage;
 
 class RequestController extends Controller {
 
-    public function index() {
+    public function index(Request $request) {
+
+        $user = $request->user();
+
+        // Get role names (admin, auditor, user)
+        $roles = $user->roles->pluck('name')->toArray();
+
         $requests = QmsRequest::with([
                     'department',
                     'type',
                     'status',
                     'creator'
-                ])->latest()->paginate(10);
+        ]);
+
+        // 🔐 ROLE-BASED FILTERING
+        if (in_array('Admin', $roles)) {
+            // Admin sees everything
+            $requests = $requests->latest()->paginate(10);
+        } elseif (in_array('Manager', $roles)) {
+            // Manager can see his own department request
+            $reviewRejectStatusIds = Status::whereIn('name', ['review', 'reject'])
+                    ->pluck('id');
+            $requests = $requests
+                    ->where(function ($q) use ($user, $reviewRejectStatusIds) {
+
+                        $q->where('created_by', $user->id)
+                        ->orWhere(function ($sub) use ($user, $reviewRejectStatusIds) {
+                            $sub->where('department_id', $user->department_id)
+                            ->whereIn('status', $reviewRejectStatusIds);
+                        });
+                    })
+                    ->latest()
+                    ->paginate(10);
+        } elseif (in_array('Quality Manager', $roles)) {
+            // Quality officer see his own and manager approved request
+            $requests = $requests
+                    ->where('created_by', $user->id)
+                    ->orWhereIn('status', ['approve'])
+                    ->paginate(10);
+        } elseif (in_array('Quality officer', $roles)) {
+            // Quality officer see his own and manager approved request
+            $requests = $requests
+                    ->where('created_by', $user->id)
+                    ->orWhereIn('status', ['approve'])
+                    ->paginate(10);
+        } else {
+            // Normal users see only his own request
+            $requests = $requests
+                    ->where('created_by', $user->id)
+                    ->paginate(10);
+        }
+
 
         return response()->json($requests);
     }
@@ -136,12 +181,13 @@ class RequestController extends Controller {
 
             $request = QmsRequest::findOrFail($id);
 
-            if ($request->status !== 'draft') {
+            if ($request->status !== 1) {
                 return response()->json(['message' => 'Already submitted'], 400);
             }
+            $reviewStatus = Status::where('name', 'review')->first();
 
             $request->update([
-                'status' => 'review'
+                'status' => $reviewStatus->id
             ]);
 
             RequestHistory::create([
@@ -152,56 +198,96 @@ class RequestController extends Controller {
             ]);
 
             DB::commit();
+            $currentrequest = QmsRequest::with([
+                        'department',
+                        'type',
+                        'status',
+                        'creator'
+                    ])->findOrFail($id);
 
-            return response()->json(['success' => true, 'message' => 'Submitted successfully']);
+            return response()->json(['success' => true, 'message' => 'Submitted successfully', 'data' => $currentrequest]);
         } catch (\Exception $e) {
 
             DB::rollback();
-            return response()->json(['success' => false], 500);
+
+            return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
         }
     }
 
     public function approve($id) {
-        $request = RequestModel::findOrFail($id);
+        DB::beginTransaction();
+        try {
+            $request = QmsRequest::findOrFail($id);
 
-        if ($request->status !== 'review') {
-            return response()->json(['message' => 'Invalid status'], 400);
+            if ($request->status !== 2) {
+                return response()->json(['message' => 'Invalid status'], 400);
+            }
+            $approveStatus = Status::where('name', 'approve')->first();
+            $request->update([
+                'status' => $approveStatus->id
+            ]);
+
+            RequestHistory::create([
+                'request_id' => $id,
+                'action' => 'Approved',
+                'remarks' => 'Approved by Manager and forwarded to Quality',
+                'changed_by' => auth()->id()
+            ]);
+            DB::commit();
+            $currentrequest = QmsRequest::with([
+                        'department',
+                        'type',
+                        'status',
+                        'creator'
+                    ])->findOrFail($id);
+
+            return response()->json(['message' => 'Approved', 'data' => $currentrequest]);
+        } catch (Exception $ex) {
+            DB::rollback();
+
+            return response()->json(['success' => false, 'error' => $ex->getMessage()], 500);
         }
-
-        $request->update([
-            'status' => 'open'
-        ]);
-
-        RequestHistory::create([
-            'request_id' => $id,
-            'action' => 'Approved',
-            'remarks' => 'Approved by Manager and forwarded to Quality',
-            'changed_by' => auth()->id()
-        ]);
-
-        return response()->json(['message' => 'Approved']);
     }
 
     // 🔹 Reject
     public function reject(Request $req, $id) {
-        $req->validate([
-            'reason' => 'required|string'
-        ]);
+        DB::beginTransaction();
+        try {
 
-        $request = RequestModel::findOrFail($id);
+            $req->validate([
+                'reason' => 'required|string'
+            ]);
+            $request = QmsRequest::findOrFail($id);
 
-        $request->update([
-            'status' => 'rejected'
-        ]);
+            if ($request->status !== 2) {
+                return response()->json(['message' => 'Invalid status'], 400);
+            }
+            $rejectStatus = Status::where('name', 'reject')->first();
+            $request->update([
+                'status' => $rejectStatus->id
+            ]);
 
-        RequestHistory::create([
-            'request_id' => $id,
-            'action' => 'Rejected',
-            'remarks' => $req->reason,
-            'changed_by' => auth()->id()
-        ]);
+            RequestHistory::create([
+                'request_id' => $id,
+                'action' => 'Rejected',
+                'remarks' => $req->reason,
+                'changed_by' => auth()->id()
+            ]);
 
-        return response()->json(['message' => 'Rejected']);
+            DB::commit();
+            $currentrequest = QmsRequest::with([
+                        'department',
+                        'type',
+                        'status',
+                        'creator'
+                    ])->findOrFail($id);
+
+            return response()->json(['message' => 'rejected', 'data' => $currentrequest]);
+        } catch (Exception $ex) {
+            DB::rollback();
+
+            return response()->json(['success' => false, 'error' => $ex->getMessage()], 500);
+        }
     }
 
     public function updateStatus(Request $req, $id) {
