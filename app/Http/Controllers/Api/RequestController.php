@@ -55,9 +55,10 @@ class RequestController extends Controller {
                     ->paginate(10);
         } elseif (in_array('Quality officer', $roles)) {
             // Quality officer see his own and manager approved request
+
             $requests = $requests
                     ->where('created_by', $user->id)
-                    ->orWhereIn('status', ['approve'])
+                    ->orWhere('status', '>=', 4)
                     ->paginate(10);
         } else {
             // Normal users see only his own request
@@ -222,9 +223,11 @@ class RequestController extends Controller {
             if ($request->status !== 2) {
                 return response()->json(['message' => 'Invalid status'], 400);
             }
-            $approveStatus = Status::where('name', 'approve')->first();
+            $approveStatus = Status::where('name', 'open')->first();
             $request->update([
-                'status' => $approveStatus->id
+                'status' => $approveStatus->id,
+                'approved_by' => auth()->id(),
+                'approved_at' => date('Y-m-d H:i:s')
             ]);
 
             RequestHistory::create([
@@ -291,23 +294,50 @@ class RequestController extends Controller {
     }
 
     public function updateStatus(Request $req, $id) {
-        $req->validate([
-            'status' => 'required|in:open,pending,under_process,closed'
-        ]);
+        DB::beginTransaction();
+        $statusDet = [];
+        try {
+            $req->validate([
+                'status' => 'required|in:open,pending,under process,close',
+                'due_date' => 'required_if:status,open|date|after_or_equal:today'
+            ]);
 
-        $request = RequestModel::findOrFail($id);
+            $request = QmsRequest::findOrFail($id);
+            $statusDet = Status::where('name', $req->status)->first();
 
-        $request->update([
-            'status' => $req->status
-        ]);
+            if ($request->status > $statusDet->id) {
+                return response()->json(['message' => 'Invalid status'], 400);
+            }
+            if ($req->status === 'open') {
+                $request->update([
+                    'status' => $statusDet->id,
+                    'due_date' => $req->due_date
+                ]);
+            } else {
+                $request->update([
+                    'status' => $statusDet->id
+                ]);
+            }
 
-        RequestHistory::create([
-            'request_id' => $id,
-            'action' => 'Status Updated',
-            'remarks' => 'Changed to ' . $req->status,
-            'changed_by' => auth()->id()
-        ]);
 
-        return response()->json(['message' => 'Status updated']);
+            RequestHistory::create([
+                'request_id' => $id,
+                'action' => 'Status Updated',
+                'remarks' => 'Changed to ' . $req->status,
+                'changed_by' => auth()->id()
+            ]);
+            DB::commit();
+            $currentrequest = QmsRequest::with([
+                        'department',
+                        'type',
+                        'status',
+                        'creator'
+                    ])->findOrFail($id);
+            return response()->json(['message' => 'Status updated', 'data' => $currentrequest]);
+        } catch (Exception $ex) {
+            DB::rollback();
+
+            return response()->json(['success' => false, 'error' => $ex->getMessage(),'status'=>$statusDet], 500);
+        }
     }
 }

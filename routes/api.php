@@ -80,7 +80,7 @@ Route::prefix('v1')->group(function () {
             Route::get('{id}', [RequestController::class, 'show']);
 
             Route::patch('{id}/submit', 'Api\RequestController@submit');
-            Route::post('{id}/change-status', 'Api\RequestController@changeStatus');
+            Route::patch('{id}/update-status', 'Api\RequestController@updateStatus');
 
             // 🔹 Add comment
             Route::post('comments', [RequestCommentController::class, 'store']);
