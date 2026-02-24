@@ -306,7 +306,7 @@ class RequestController extends Controller {
             $statusDet = Status::where('name', $req->status)->first();
 
             if ($request->status > $statusDet->id) {
-                return response()->json(['message' => 'Invalid status'], 400);
+                return response()->json(['message' => 'This status has already been selected for the same request'], 400);
             }
             if ($req->status === 'open') {
                 $request->update([
@@ -333,7 +333,7 @@ class RequestController extends Controller {
                         'status',
                         'creator'
                     ])->findOrFail($id);
-            return response()->json(['message' => 'Status updated', 'data' => $currentrequest]);
+            return response()->json(['message' => 'Request status has been changed', 'data' => $currentrequest]);
         } catch (Exception $ex) {
             DB::rollback();
 
