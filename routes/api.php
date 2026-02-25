@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\DocumentTypeController;
 use App\Http\Controllers\Api\RequestController;
 use App\Http\Controllers\Api\RequestAttachmentController;
 use App\Http\Controllers\Api\RequestCommentController;
+use App\Http\Controllers\Api\UserController;
 
 /*
   |--------------------------------------------------------------------------
@@ -104,6 +105,21 @@ Route::prefix('v1')->group(function () {
             // Approvals
             Route::post('approvals/{id}/approve', 'Api\RequestApprovalController@approve');
             Route::post('approvals/{id}/reject', 'Api\RequestApprovalController@reject');
+            // Assign
+            Route::post('{id}/assign', [RequestController::class, 'assign']);
+
+            
         });
+        
+        
+        Route::prefix('user')->group(function () {
+
+            //User related api call
+            Route::get('quality-users', [UserController::class, 'getQualityUsers']);
+            
+        });
+        
+        
+
     });
 });

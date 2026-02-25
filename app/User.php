@@ -36,4 +36,8 @@ class User extends Authenticatable {
     public function hasAnyRole(array $roles): bool {
         return $this->roles()->whereIn('name', $roles)->exists();
     }
+    public function department()
+    {
+        return $this->belongsTo(Department::class, 'department_id');
+    }
 }

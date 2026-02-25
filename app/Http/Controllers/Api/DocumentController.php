@@ -29,7 +29,14 @@ class DocumentController extends Controller {
         if (in_array('Admin', $roles)) {
             // Admin sees everything
             $documents = $query->paginate($perPage);
-        } elseif (in_array('auditor', $roles)) {
+        } elseif (in_array('User', $roles)) {
+            // Auditor sees approved + under review
+            $documents = $query->where('created_by', $user->id)
+                   
+                    ->paginate($perPage);
+        }
+        
+        elseif (in_array('auditor', $roles)) {
             // Auditor sees approved + under review
             $documents = $query
                     ->whereIn('status', ['Approved', 'Under Review'])

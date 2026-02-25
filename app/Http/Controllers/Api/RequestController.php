@@ -6,11 +6,10 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\QmsRequest;
 use App\Status;
+use App\User;
 use App\RequestHistory;
 use App\RequestAttachment;
-use Auth;
 use DB;
-use Illuminate\Support\Facades\Storage;
 
 class RequestController extends Controller {
 
@@ -25,7 +24,8 @@ class RequestController extends Controller {
                     'department',
                     'type',
                     'status',
-                    'creator'
+                    'creator',
+                    'assigner'
         ]);
 
         // 🔐 ROLE-BASED FILTERING
@@ -83,7 +83,8 @@ class RequestController extends Controller {
 
         try {
 
-            $draftStatus = \App\Status::where('code', 'draft')->first();
+            $draftStatus = \App\Status::where('name', 'draft')->first();
+            $departmentDetails = \App\Department::where('id', $request->department_id)->first();
 
             $newRequest = \App\QmsRequest::create([
                         'request_no' => 'REQ-' . time(),
@@ -91,6 +92,7 @@ class RequestController extends Controller {
                         'description' => $request->description,
                         'department_id' => $request->department_id,
                         'request_type_id' => $request->request_type_id,
+                        'approved_by' => $departmentDetails->manager_id,
                         'status' => $draftStatus->id,
                         'created_by' => $request->user()->id
             ]);
@@ -141,6 +143,17 @@ class RequestController extends Controller {
                 'remarks' => 'Request created'
             ]);
 
+            /*
+              |--------------------------------------------------------------------------
+              | Approval table entry
+              |--------------------------------------------------------------------------
+             */
+
+            \App\RequestApproval::create([
+                'request_id' => $newRequest->id,
+                'approver_id' => $departmentDetails->manager_id
+            ]);
+
             DB::commit();
 
             return response()->json([
@@ -154,7 +167,7 @@ class RequestController extends Controller {
 
             return response()->json([
                         'success' => false,
-                        'message' => 'Something went wrong',
+                        'message' => 'Something went wrong:...',
                         'error' => $e->getMessage()
                             ], 500);
         }
@@ -166,7 +179,9 @@ class RequestController extends Controller {
                     'department',
                     'type',
                     'creator',
+                    'approvals.approver',
                     'status',
+                    'assigner',
                     'comments.user',
                     'attachments.uploader',
                     'histories.user'
@@ -223,11 +238,12 @@ class RequestController extends Controller {
             if ($request->status !== 2) {
                 return response()->json(['message' => 'Invalid status'], 400);
             }
-            $approveStatus = Status::where('name', 'open')->first();
+            $approveStatus = Status::where('name', 'approve')->first();
+            $updateddate = date('Y-m-d H:i:s');
             $request->update([
                 'status' => $approveStatus->id,
                 'approved_by' => auth()->id(),
-                'approved_at' => date('Y-m-d H:i:s')
+                'approved_at' => $updateddate
             ]);
 
             RequestHistory::create([
@@ -236,6 +252,13 @@ class RequestController extends Controller {
                 'remarks' => 'Approved by Manager and forwarded to Quality',
                 'changed_by' => auth()->id()
             ]);
+
+            \App\RequestApproval::where('request_id', $id)
+                    ->update([
+                        'approver_id' => auth()->id(),
+                        'status' => 2
+            ]);
+
             DB::commit();
             $currentrequest = QmsRequest::with([
                         'department',
@@ -267,7 +290,8 @@ class RequestController extends Controller {
             }
             $rejectStatus = Status::where('name', 'reject')->first();
             $request->update([
-                'status' => $rejectStatus->id
+                'status' => $rejectStatus->id,
+                'rejected_reason' => $req->reason
             ]);
 
             RequestHistory::create([
@@ -337,7 +361,52 @@ class RequestController extends Controller {
         } catch (Exception $ex) {
             DB::rollback();
 
-            return response()->json(['success' => false, 'error' => $ex->getMessage(),'status'=>$statusDet], 500);
+            return response()->json(['success' => false, 'error' => $ex->getMessage(), 'status' => $statusDet], 500);
         }
     }
+
+    public function assign(Request $request, $id) {
+        $request->validate([
+            'user_id' => 'required|exists:users,id'
+        ]);
+
+        $qmsRequest = QmsRequest::findOrFail($id);
+        $qmsRequest->assigned_to = $request->user_id;
+        $qmsRequest->save();
+        $user  = User::findOrFail($request->user_id);
+        RequestHistory::create([
+                'request_id' => $id,
+                'action' => 'Assigned',
+                'remarks' => 'assign to: ' . $user->name,
+                'changed_by' => auth()->id()
+            ]);
+
+        return response()->json(['message' => 'Assigned successfully']);
+    }
+    public function update(Request $request, $id)
+{
+    $qmsRequest = QmsRequest::findOrFail($id);
+
+    // Only allow draft editing
+    if ($qmsRequest->status->name !== 'draft') {
+        return response()->json([
+            'message' => 'Only draft requests can be edited.'
+        ], 403);
+    }
+
+    $validated = $request->validate([
+        'title' => 'required|string|max:255',
+        'department_id' => 'required|exists:departments,id',
+        'request_type_id' => 'required|exists:request_types,id',
+        'priority' => 'required|string',
+        'description' => 'required|string'
+    ]);
+
+    $qmsRequest->update($validated);
+
+    return response()->json([
+        'message' => 'Request updated successfully'
+    ]);
+}
+
 }

@@ -52,17 +52,22 @@ class QmsRequest extends Model
 
     public function comments()
     {
-        return $this->hasMany(RequestComment::class, 'request_id') ->orderBy('created_at', 'desc');;
+        return $this->hasMany(RequestComment::class, 'request_id') ->orderBy('created_at', 'desc');
+    }
+    
+     public function assigner()
+    {
+         return $this->belongsTo(User::class, 'assigned_to');
     }
 
     public function attachments()
     {
-        return $this->hasMany(RequestAttachment::class, 'request_id');
+        return $this->hasMany(RequestAttachment::class, 'request_id') ->orderBy('created_at', 'desc');
     }
 
     public function histories()
     {
-        return $this->hasMany(RequestHistory::class, 'request_id');
+        return $this->hasMany(RequestHistory::class, 'request_id')->orderBy('created_at', 'desc');
     }
     
 }
