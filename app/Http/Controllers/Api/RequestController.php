@@ -388,9 +388,10 @@ class RequestController extends Controller {
     $qmsRequest = QmsRequest::findOrFail($id);
 
     // Only allow draft editing
-    if ($qmsRequest->status->name !== 'draft') {
+    if (!in_array($qmsRequest->status, [1, 2]) ) { 
         return response()->json([
-            'message' => 'Only draft requests can be edited.'
+            'message' => 'Only draft/review requests can be edited.',
+            'status_id'=>$qmsRequest->status
         ], 403);
     }
 
