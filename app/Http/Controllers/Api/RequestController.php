@@ -51,7 +51,7 @@ class RequestController extends Controller {
             // Quality officer see his own and manager approved request
             $requests = $requests
                     ->where('created_by', $user->id)
-                    ->orWhereIn('status', ['approve'])
+                     ->orWhere('status', '>=', 4)
                     ->paginate(10);
         } elseif (in_array('Quality officer', $roles)) {
             // Quality officer see his own and manager approved request
