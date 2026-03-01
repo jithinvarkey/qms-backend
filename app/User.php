@@ -12,6 +12,11 @@ use Laravel\Sanctum\HasApiTokens;
 class User extends Authenticatable {
      
     use HasApiTokens, Notifiable;
+    protected $hidden = [
+    'password',
+    'remember_token',
+];
+
    
 
 
@@ -30,5 +35,9 @@ class User extends Authenticatable {
 
     public function hasAnyRole(array $roles): bool {
         return $this->roles()->whereIn('name', $roles)->exists();
+    }
+    public function department()
+    {
+        return $this->belongsTo(Department::class, 'department_id');
     }
 }

@@ -29,7 +29,14 @@ class DocumentController extends Controller {
         if (in_array('Admin', $roles)) {
             // Admin sees everything
             $documents = $query->paginate($perPage);
-        } elseif (in_array('auditor', $roles)) {
+        } elseif (in_array('User', $roles)) {
+            // Auditor sees approved + under review
+            $documents = $query->where('created_by', $user->id)
+                   
+                    ->paginate($perPage);
+        }
+        
+        elseif (in_array('auditor', $roles)) {
             // Auditor sees approved + under review
             $documents = $query
                     ->whereIn('status', ['Approved', 'Under Review'])
@@ -51,87 +58,65 @@ class DocumentController extends Controller {
     /* ================= CREATE DOCUMENT ================= */
 
     public function store(Request $request) {
-        $request->validate([
-            'title' => 'required',
-            'department_id' => 'required',
-            'request_type_id' => 'required',
-             'attachments.*' => 'file|mimes:pdf,doc,docx,jpg,png|max:5120'
-            
+
+        $validated = $request->validate([
+            'document_code' => 'required|string|max:50|unique:documents,document_code',
+            'title' => 'required|string|max:255',
+            'category_id' => 'required|exists:document_categories,id',
+            'type_id' => 'required|exists:document_types,id',
+            'version' => 'required|string|max:10',
+            'effective_date' => 'required|date',
+            'file' => 'required|file|max:5120' // 5MB max
         ]);
-
-        DB::beginTransaction();
-
-        try {
-
-            $draftStatus = \App\Status::where('code', 'draft')->first();
-
-            $newRequest = \App\QmsRequest::create([
-                        'request_no' => 'REQ-' . time(),
-                        'title' => $request->title,
-                        'description' => $request->description,
-                        'department_id' => $request->department_id,
-                        'request_type_id' => $request->request_type_id,
-                        'status_id' => $draftStatus->id,
-                        'created_by' => $request->user()->id
-            ]);
-
-            /*
-              |--------------------------------------------------------------------------
-              | Create Folder Based on Request ID
-              |--------------------------------------------------------------------------
-             */
-
-            $folderPath = 'qms/requests/' . $newRequest->id;
-
-            if ($request->hasFile('attachments')) {
-
-                foreach ($request->file('attachments') as $file) {
-
-                  
-                    $fileName = uniqid() . '.' . $file->getClientOriginalExtension();
-
-
-                    $path = $file->storeAs(
-                            $folderPath,
-                            $fileName,
-                            'public'
-                    );
-
-                    \App\RequestAttachment::create([
-                        'request_id' => $newRequest->id,
-                        'file_name' => $fileName,
-                        'file_path' => $path,
-                        'uploaded_by' => $request->user()->id
-                    ]);
-                }
+        $type = DocumentType::find($request->type_id);
+        $file = $request->file('file');
+        $extension = strtolower($file->getClientOriginalExtension());
+        if ($type->name === 'Form') {
+            if ($extension !== 'pdf') {
+                return response()->json([
+                            'message' => 'Only PDF allowed for Form type'
+                                ], 422);
             }
-
-            \App\RequestHistory::create([
-                'request_id' => $newRequest->id,
-                'action' => 'Created',
-                'old_status' => null,
-                'new_status' => $draftStatus->id,
-                'changed_by' => $request->user()->id,
-                'remarks' => 'Request created'
-            ]);
-
-            DB::commit();
-
-            return response()->json([
-                        'success' => true,
-                        'message' => 'Request created successfully',
-                        'data' => $newRequest->load('attachments')
-            ]);
-        } catch (\Exception $e) {
-
-            DB::rollback();
-
-            return response()->json([
-                        'success' => false,
-                        'message' => 'Something went wrong',
-                        'error' => $e->getMessage()
-                            ], 500);
+        } else {
+            $allowed = ['pdf', 'doc', 'docx', 'jpg', 'jpeg'];
+            if (!in_array($extension, $allowed)) {
+                return response()->json([
+                            'message' => 'Invalid file type'
+                                ], 422);
+            }
         }
+
+
+        $typeName = strtolower(trim($type->name)); // form, policy, manual
+
+        $folder = 'documents/' . $typeName . '/' . $validated['document_code'];
+
+        $filename = 'v' . $validated['version'] . '.' . $extension;
+
+        if (Storage::exists($folder . '/' . $filename)) {
+            return response()->json([
+                        'message' => 'Version already exists.'
+                            ], 422);
+        }
+
+// Store in PRIVATE storage (NOT public)
+        $path = $file->storeAs($folder, $filename);
+
+        $document = Document::create(array_merge(
+                                $validated,
+                                [
+                                    'status' => 'Draft',
+                                    'approve_status' => 1,
+                                    'created_by' => Auth::id(),
+                                    'file_path' => $path
+                                ]
+        ));
+
+        return response()->json([
+                    'success' => true,
+                    'message' => 'Document created successfully',
+                    'data' => $document
+                        ], 201);
     }
 
     /* ================= UPDATE DOCUMENT ================= */

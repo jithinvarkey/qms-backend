@@ -14,7 +14,7 @@ class QmsRequest extends Model
         'description',
         'department_id',
         'request_type_id',
-        'status_id',
+        'status',
         'priority',
         'created_by',
         'assigned_to',
@@ -37,7 +37,7 @@ class QmsRequest extends Model
 
     public function status()
     {
-        return $this->belongsTo(Status::class);
+        return $this->belongsTo(Status::class,'status');
     }
 
     public function creator()
@@ -52,17 +52,23 @@ class QmsRequest extends Model
 
     public function comments()
     {
-        return $this->hasMany(RequestComment::class, 'request_id');
+        return $this->hasMany(RequestComment::class, 'request_id') ->orderBy('created_at', 'desc');
+    }
+    
+     public function assigner()
+    {
+         return $this->belongsTo(User::class, 'assigned_to');
     }
 
     public function attachments()
     {
-        return $this->hasMany(RequestAttachment::class, 'request_id');
+        return $this->hasMany(RequestAttachment::class, 'request_id') ->orderBy('created_at', 'desc');
     }
 
     public function histories()
     {
-        return $this->hasMany(RequestHistory::class, 'request_id');
+        return $this->hasMany(RequestHistory::class, 'request_id')->orderBy('created_at', 'desc');
     }
+    
 }
 
