@@ -13,7 +13,7 @@ class DocumentCategoryController extends Controller {
      * List categories
      */
     public function index(Request $request) {
-        $perPage = $request->get('per_page', 1);
+        $perPage = $request->get('per_page', 20);
 
         $categories = DocumentCategory::orderBy('id', 'desc')
                 ->paginate($perPage);

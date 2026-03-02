@@ -26,17 +26,47 @@ class DocumentController extends Controller {
         ]);
 
         // 🔐 ROLE-BASED FILTERING
-        if (in_array('Admin', $roles)) {
-            // Admin sees everything
-            $documents = $query->paginate($perPage);
+
+        if (in_array('Quality Manager', $roles)) {
+            $documents = $query
+                            ->where(function ($q) use ($user) {
+
+                                $q->where('created_by', $user->id)
+                                ->orWhere(function ($sub) {
+                                    $sub->whereIn('status', ['Approved', 'Under Review', 'Rejected']);
+                                });
+                            })->latest()->paginate($perPage);
+        } elseif (in_array('Quality officer', $roles)) {
+
+            $documents = $query
+                            ->where(function ($q) use ($user) {
+
+                                $q->where('created_by', $user->id)
+                                ->orWhere(function ($sub) {
+                                    $sub->whereIn('status', ['Approved']);
+                                });
+                            })->latest()->paginate($perPage);
+
+//            return response()->json([
+//                        'sql' => $documents->toSql(),
+//                        'bindings' => $documents->getBindings()
+//            ]);
         } elseif (in_array('User', $roles)) {
             // Auditor sees approved + under review
-            $documents = $query->where('created_by', $user->id)
-                   
-                    ->paginate($perPage);
-        }
-        
-        elseif (in_array('auditor', $roles)) {
+                       
+            
+            $documents = $query
+                    ->where(function ($q) use ($user) {
+
+                        $q->where('created_by', $user->id)
+                        ->orWhere(function ($sub) use ($user) {
+                            $sub->whereIn('status', ['Approved']);
+                        });
+                    })
+                    ->latest()
+                    ->paginate(25);
+            
+        } elseif (in_array('auditor', $roles)) {
             // Auditor sees approved + under review
             $documents = $query
                     ->whereIn('status', ['Approved', 'Under Review'])
@@ -132,11 +162,11 @@ class DocumentController extends Controller {
             'review_date' => 'nullable|date'
         ]);
 
-        $document = Document::create(array_merge(
-                                $validated,
-                                [
-                                    'updated_by' => Auth::id()
-                                ]
+        $document->update(array_merge(
+                        $validated,
+                        [
+                            'updated_by' => Auth::id()
+                        ]
         ));
 
         return response()->json([
@@ -147,13 +177,31 @@ class DocumentController extends Controller {
 
     /* ================= SUBMIT FOR REVIEW ================= */
 
-    public function submitForReview($id) {
+    public function submitForReview(Request $request,$id) {
         $document = Document::findOrFail($id);
+        $user = $request->user();
 
-        $document->update([
-            'status' => 'Under Review',
-            'approve_status' => 2
-        ]);
+        // Get role names (admin, auditor, user)
+        $roles = $user->roles->pluck('name')->toArray();
+        if (in_array('Quality Manager', $roles)) {
+            $document->update([
+                'status' => 'Under Review',
+                'approve_status' => 2
+            ]);
+            $document->update([
+                'status' => 'Approved',
+                'approve_status' => 3,
+                'approved_by' => Auth::id(),
+                'approved_at' => now()
+            ]);
+        } else {
+            $document->update([
+                'status' => 'Under Review',
+                'approve_status' => 2
+            ]);
+        }
+
+
 
         return response()->json([
                     'success' => true,

@@ -46,25 +46,25 @@ class RequestController extends Controller {
                         });
                     })
                     ->latest()
-                    ->paginate(10);
+                    ->paginate(25);
         } elseif (in_array('Quality Manager', $roles)) {
             // Quality officer see his own and manager approved request
             $requests = $requests
                     ->where('created_by', $user->id)
                      ->orWhere('status', '>=', 4)
-                    ->paginate(10);
+                    ->paginate(25);
         } elseif (in_array('Quality officer', $roles)) {
             // Quality officer see his own and manager approved request
 
             $requests = $requests
                     ->where('created_by', $user->id)
                     ->orWhere('status', '>=', 4)
-                    ->paginate(10);
+                    ->paginate(25);
         } else {
             // Normal users see only his own request
             $requests = $requests
                     ->where('created_by', $user->id)
-                    ->paginate(10);
+                    ->paginate(25);
         }
 
 
@@ -337,6 +337,11 @@ class RequestController extends Controller {
                     'status' => $statusDet->id,
                     'due_date' => $req->due_date
                 ]);
+            } elseif($req->status === 'close') {
+               $request->update([
+                    'status' => $statusDet->id,
+                    'closed_date' => date('Y-m-d H:i:s')
+                ]); 
             } else {
                 $request->update([
                     'status' => $statusDet->id
