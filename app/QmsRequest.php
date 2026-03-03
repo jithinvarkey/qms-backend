@@ -21,6 +21,7 @@ class QmsRequest extends Model
         'approved_by',
         'approved_at',
         'rejected_reason',
+        'delay_reason',
         'due_date',
         'is_active'
     ];
@@ -69,6 +70,10 @@ class QmsRequest extends Model
     {
         return $this->hasMany(RequestHistory::class, 'request_id')->orderBy('created_at', 'desc');
     }
+    public function statusSla()
+{
+    return $this->hasMany(RequestStatusSla::class, 'request_id');
+}
     
 }
 

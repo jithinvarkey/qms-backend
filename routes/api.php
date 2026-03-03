@@ -90,6 +90,7 @@ Route::prefix('v1')->group(function () {
             // 🔹 Approve / Reject
             Route::patch('{id}/approve', [RequestController::class, 'approve']);
             Route::patch('{id}/reject', [RequestController::class, 'reject']);
+            Route::patch('{id}/close', [RequestController::class, 'close']);
 
             // 🔹 Logs
             Route::get('{id}/logs', [RequestLogController::class, 'index']);

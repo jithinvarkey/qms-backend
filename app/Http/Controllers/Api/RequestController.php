@@ -9,6 +9,7 @@ use App\Status;
 use App\User;
 use App\RequestHistory;
 use App\RequestAttachment;
+use App\RequestStatusSla;
 use DB;
 
 class RequestController extends Controller {
@@ -51,7 +52,7 @@ class RequestController extends Controller {
             // Quality officer see his own and manager approved request
             $requests = $requests
                     ->where('created_by', $user->id)
-                     ->orWhere('status', '>=', 4)
+                    ->orWhere('status', '>=', 4)
                     ->paginate(25);
         } elseif (in_array('Quality officer', $roles)) {
             // Quality officer see his own and manager approved request
@@ -184,7 +185,8 @@ class RequestController extends Controller {
                     'assigner',
                     'comments.user',
                     'attachments.uploader',
-                    'histories.user'
+                    'histories.user',
+                    'statusSla.status'
                 ])->findOrFail($id);
 
         return response()->json($request);
@@ -257,6 +259,14 @@ class RequestController extends Controller {
                     ->update([
                         'approver_id' => auth()->id(),
                         'status' => 2
+            ]);
+
+            //enter new status entry time
+            RequestStatusSla::create([
+                'request_id' => $id,
+                'status_id' => 5,
+                'entered_at' => now(),
+                'changed_by' => auth()->id(),
             ]);
 
             DB::commit();
@@ -337,11 +347,11 @@ class RequestController extends Controller {
                     'status' => $statusDet->id,
                     'due_date' => $req->due_date
                 ]);
-            } elseif($req->status === 'close') {
-               $request->update([
+            } elseif ($req->status === 'close') {
+                $request->update([
                     'status' => $statusDet->id,
                     'closed_date' => date('Y-m-d H:i:s')
-                ]); 
+                ]);
             } else {
                 $request->update([
                     'status' => $statusDet->id
@@ -351,10 +361,25 @@ class RequestController extends Controller {
 
             RequestHistory::create([
                 'request_id' => $id,
-                'action' => 'Status Updated',
+                'action' => 'Status Updated to ' . $req->status,
                 'remarks' => 'Changed to ' . $req->status,
                 'changed_by' => auth()->id()
             ]);
+
+            //update old sttaus exit time  
+            $time = now();
+            RequestStatusSla::where('request_id', $id)
+                    ->whereNull('exited_at')
+                    ->update(['exited_at' => $time]);
+            //enter new status entry time
+            RequestStatusSla::create([
+                'request_id' => $id,
+                'status_id' => $statusDet->id,
+                'entered_at' => $time,
+                'exited_at' => $statusDet->is_final ? $time : null,
+                'changed_by' => auth()->id(),
+            ]);
+
             DB::commit();
             $currentrequest = QmsRequest::with([
                         'department',
@@ -362,6 +387,7 @@ class RequestController extends Controller {
                         'status',
                         'creator'
                     ])->findOrFail($id);
+
             return response()->json(['message' => 'Request status has been changed', 'data' => $currentrequest]);
         } catch (Exception $ex) {
             DB::rollback();
@@ -378,41 +404,99 @@ class RequestController extends Controller {
         $qmsRequest = QmsRequest::findOrFail($id);
         $qmsRequest->assigned_to = $request->user_id;
         $qmsRequest->save();
-        $user  = User::findOrFail($request->user_id);
+        $user = User::findOrFail($request->user_id);
         RequestHistory::create([
-                'request_id' => $id,
-                'action' => 'Assigned',
-                'remarks' => 'assign to: ' . $user->name,
-                'changed_by' => auth()->id()
-            ]);
+            'request_id' => $id,
+            'action' => 'Assigned',
+            'remarks' => 'assign to: ' . $user->name,
+            'changed_by' => auth()->id()
+        ]);
 
         return response()->json(['message' => 'Assigned successfully']);
     }
-    public function update(Request $request, $id)
-{
-    $qmsRequest = QmsRequest::findOrFail($id);
 
-    // Only allow draft editing
-    if (!in_array($qmsRequest->status, [1, 2]) ) { 
+    public function update(Request $request, $id) {
+        $qmsRequest = QmsRequest::findOrFail($id);
+
+        // Only allow draft editing
+        if (!in_array($qmsRequest->status, [1, 2])) {
+            return response()->json([
+                        'message' => 'Only draft/review requests can be edited.',
+                        'status_id' => $qmsRequest->status
+                            ], 403);
+        }
+
+        $validated = $request->validate([
+            'title' => 'required|string|max:255',
+            'department_id' => 'required|exists:departments,id',
+            'request_type_id' => 'required|exists:request_types,id',
+            'priority' => 'required|string',
+            'description' => 'required|string'
+        ]);
+
+        $qmsRequest->update($validated);
+
+        RequestHistory::create([
+            'request_id' => $id,
+            'action' => 'Updated',
+            'remarks' => '',
+            'changed_by' => auth()->id()
+        ]);
+
         return response()->json([
-            'message' => 'Only draft/review requests can be edited.',
-            'status_id'=>$qmsRequest->status
-        ], 403);
+                    'message' => 'Request updated successfully'
+        ]);
     }
 
-    $validated = $request->validate([
-        'title' => 'required|string|max:255',
-        'department_id' => 'required|exists:departments,id',
-        'request_type_id' => 'required|exists:request_types,id',
-        'priority' => 'required|string',
-        'description' => 'required|string'
-    ]);
+    public function close(Request $req, $id) {
+        DB::beginTransaction();
+        try {
 
-    $qmsRequest->update($validated);
+            $req->validate([
+                'reason' => 'required|string'
+            ]);
+            $request = QmsRequest::findOrFail($id);
 
-    return response()->json([
-        'message' => 'Request updated successfully'
-    ]);
-}
+            if (!in_array($request->status, [5, 6, 7])) {
+                return response()->json(['message' => 'Invalid status'], 400);
+            }
+            $closeStatus = Status::where('name', 'close')->first();
+            $request->update([
+                'status' => $closeStatus->id,
+                'delay_reason' => $req->reason
+            ]);
 
+            RequestHistory::create([
+                'request_id' => $id,
+                'action' => 'Closed',
+                'remarks' => $req->reason,
+                'changed_by' => auth()->id()
+            ]);
+            //update old sttaus exit time  
+            RequestStatusSla::where('request_id', $id)
+                    ->whereNull('exited_at')
+                    ->update(['exited_at' => now()]);
+            //enter new status entry time
+            RequestStatusSla::create([
+                'request_id' => $id,
+                'status_id' => $closeStatus->id,
+                'entered_at' => now(),
+                'changed_by' => auth()->id(),
+            ]);
+
+            DB::commit();
+            $currentrequest = QmsRequest::with([
+                        'department',
+                        'type',
+                        'status',
+                        'creator'
+                    ])->findOrFail($id);
+
+            return response()->json(['message' => 'closed', 'data' => $currentrequest, 'delay_reason' => $req->reason]);
+        } catch (Exception $ex) {
+            DB::rollback();
+
+            return response()->json(['success' => false, 'error' => $ex->getMessage()], 500);
+        }
+    }
 }
