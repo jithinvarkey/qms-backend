@@ -15,13 +15,10 @@ use DB;
 class RequestController extends Controller {
 
     public function index(Request $request) {
-
         $user = $request->user();
-
-        // Get role names (admin, auditor, user)
         $roles = $user->roles->pluck('name')->toArray();
 
-        $requests = QmsRequest::with([
+        $query = QmsRequest::with([
                     'department',
                     'type',
                     'status',
@@ -29,47 +26,67 @@ class RequestController extends Controller {
                     'assigner'
         ]);
 
-        // 🔐 ROLE-BASED FILTERING
+        //  ROLE FILTERING
         if (in_array('Admin', $roles)) {
-            // Admin sees everything
-            $requests = $requests->latest()->paginate(10);
+
+            // no restriction
         } elseif (in_array('Manager', $roles)) {
-            // Manager can see his own department request
+
             $reviewRejectStatusIds = Status::whereIn('name', ['review', 'reject'])
                     ->pluck('id');
-            $requests = $requests
-                    ->where(function ($q) use ($user, $reviewRejectStatusIds) {
 
-                        $q->where('created_by', $user->id)
+            $query->where(function ($q) use ($user, $reviewRejectStatusIds) {
+                $q->where('created_by', $user->id)
                         ->orWhere(function ($sub) use ($user, $reviewRejectStatusIds) {
                             $sub->where('department_id', $user->department_id)
                             ->whereIn('status', $reviewRejectStatusIds);
                         });
-                    })
-                    ->latest()
-                    ->paginate(25);
-        } elseif (in_array('Quality Manager', $roles)) {
-            // Quality officer see his own and manager approved request
-            $requests = $requests
-                    ->where('created_by', $user->id)
-                    ->orWhere('status', '>=', 4)
-                    ->paginate(25);
-        } elseif (in_array('Quality officer', $roles)) {
-            // Quality officer see his own and manager approved request
+            });
+        } elseif (in_array('Quality Manager', $roles) || in_array('Quality officer', $roles)) {
 
-            $requests = $requests
-                    ->where('created_by', $user->id)
-                    ->orWhere('status', '>=', 4)
-                    ->paginate(25);
+            $query->where(function ($q) use ($user) {
+                $q->where('created_by', $user->id)
+                        ->orWhere('status', '>=', 4);
+            });
         } else {
-            // Normal users see only his own request
-            $requests = $requests
-                    ->where('created_by', $user->id)
-                    ->paginate(25);
+
+            $query->where('created_by', $user->id);
         }
 
+        // 🎯 FILTERS
+        if ($request->department_id) {
+            $query->where('department_id', $request->department_id);
+        }
 
-        return response()->json($requests);
+        if ($request->status_id) {
+            $query->where('status', $request->status_id);
+        }
+
+        // 🔥 Clone query BEFORE pagination for counts
+        $countQuery = clone $query;
+
+        $requests = $query->latest()->paginate(25);
+
+        // 🔥 COUNTS (respecting role + filters)
+        $counts = [
+            'total' => $countQuery->count(),
+            'open' => (clone $countQuery)->whereIn('status', [1,2,4,5,6,7])->count(),
+            'overdue' => (clone $countQuery)
+                    ->where('due_date', '<', now())
+                    ->whereNotIn('status', [8])
+                    ->count(),
+            'rejected' => (clone $countQuery)->where('status', 3)->count(),
+            'completed' => (clone $countQuery)->where('status', 8)->count(),
+        ];
+
+        return response()->json([
+                    'data' => $requests->items(),
+                    'current_page' => $requests->currentPage(),
+                    'last_page' => $requests->lastPage(),
+                    'total' => $requests->total(),
+                    'per_page' => $requests->perPage(),
+                    'counts' => $counts
+        ]);
     }
 
     public function store(Request $request) {

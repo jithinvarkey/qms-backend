@@ -28,61 +28,86 @@ class DocumentController extends Controller {
         // 🔐 ROLE-BASED FILTERING
 
         if (in_array('Quality Manager', $roles)) {
-            $documents = $query
-                            ->where(function ($q) use ($user) {
+            $query
+                    ->where(function ($q) use ($user) {
 
-                                $q->where('created_by', $user->id)
-                                ->orWhere(function ($sub) {
-                                    $sub->whereIn('status', ['Approved', 'Under Review', 'Rejected']);
-                                });
-                            })->latest()->paginate($perPage);
+                        $q->where('created_by', $user->id)
+                        ->orWhere(function ($sub) {
+                            $sub->whereIn('status', ['Approved', 'Under Review', 'Rejected']);
+                        });
+                    });
         } elseif (in_array('Quality officer', $roles)) {
 
-            $documents = $query
-                            ->where(function ($q) use ($user) {
+            $query
+                    ->where(function ($q) use ($user) {
 
-                                $q->where('created_by', $user->id)
-                                ->orWhere(function ($sub) {
-                                    $sub->whereIn('status', ['Approved']);
-                                });
-                            })->latest()->paginate($perPage);
+                        $q->where('created_by', $user->id)
+                        ->orWhere(function ($sub) {
+                            $sub->whereIn('status', ['Approved']);
+                        });
+                    });
 
 //            return response()->json([
 //                        'sql' => $documents->toSql(),
 //                        'bindings' => $documents->getBindings()
 //            ]);
         } elseif (in_array('User', $roles)) {
-            
 
-            $documents = $query
+
+            $query
                     ->whereHas('category', function ($q) use ($user) {
-                        $q->whereIn('department_id', [$user->department_id,(int)env('DEPARTMENT_ALL_ID')]);
+                        $q->whereIn('department_id', [$user->department_id, (int) env('DEPARTMENT_ALL_ID')]);
                     })
-                    ->where(function ($q) use ($user) {
+                    ->where(function ($q) {
                         $q->whereIn('status', ['Approved']);
-                        
-                    })
-                    ->latest()
-                    ->paginate(25);
-                    
-
-                   
+                    });
         } elseif (in_array('auditor', $roles)) {
             // Auditor sees approved + under review
-            $documents = $query
-                    ->whereIn('status', ['Approved', 'Under Review'])
-                    ->paginate($perPage);
+            $query
+                    ->whereIn('status', ['Approved', 'Under Review']);
         } else {
             // Normal users see only approved documents
-            $documents = $query
-                    ->where('status', 'Approved')
-                    ->paginate($perPage);
+            $query
+                    ->where('status', 'Approved');
         }
+         // 🎯 FILTERS
+        if ($request->category_id) {
+            $query->where('category_id','=', $request->category_id);
+        }
+
+        if ($request->status_id) {
+            $query->where('status', '=',$request->status_id);
+        }
+         if ($request->type_id) {
+            $query->where('type_id', $request->type_id);
+        }
+
+        // 🔥 Clone query BEFORE pagination for counts
+        $countQuery = clone $query;
+        
+                    
+
+        $documents = $query->latest()->paginate(25);
+       
+        
+        // 🔥 COUNTS (respecting role + filters)
+        $counts = [
+            'total' => $countQuery->count(),
+            'review' => (clone $countQuery)->where('status', 'Under Review')->count(),
+            'approved' => (clone $countQuery)->where('status', 'Approved')->count(),
+            'rejected' => (clone $countQuery)->where('status', 'Rejected')->count()
+            
+        ];
 
         return response()->json([
                     'success' => true,
                     'role' => $roles,
-                    'data' => $documents
+                    'data' => $documents->items(),
+                    'current_page' => $documents->currentPage(),
+                    'last_page' => $documents->lastPage(),
+                    'total' => $documents->total(),
+                    'per_page' => $documents->perPage(),
+                    'counts' => $counts
         ]);
     }
 

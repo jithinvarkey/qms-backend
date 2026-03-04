@@ -18,7 +18,7 @@ class MasterController extends Controller {
 
         return response()->json([
                     'success' => true,
-                    'data' => $types
+                    'data' => $statuses
         ]);
     }
 
@@ -43,6 +43,16 @@ class MasterController extends Controller {
         return response()->json([
                     'success' => true,
                     'data' => $department
+        ]);
+    }
+    
+    public function requeststatus() {
+        $status = Status::where('is_active', 1)
+                ->orderBy('name')
+                ->get(['id', 'code']);
+        return response()->json([
+                    'success' => true,
+                    'data' => $status
         ]);
     }
 }

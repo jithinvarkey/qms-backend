@@ -70,6 +70,9 @@ Route::prefix('v1')->group(function () {
         Route::get('statuses', 'Api\MasterController@statuses');
         Route::get('request-types', 'Api\MasterController@types');
         Route::get('departments', 'Api\MasterController@departments');
+        Route::get('request-status', 'Api\MasterController@requeststatus');
+        
+        
 
         //QMS Request related routing
         Route::apiResource('requests', 'Api\RequestController');
