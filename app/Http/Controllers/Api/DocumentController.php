@@ -52,20 +52,21 @@ class DocumentController extends Controller {
 //                        'bindings' => $documents->getBindings()
 //            ]);
         } elseif (in_array('User', $roles)) {
-            // Auditor sees approved + under review
-                       
             
-            $documents = $query
-                    ->where(function ($q) use ($user) {
 
-                        $q->where('created_by', $user->id)
-                        ->orWhere(function ($sub) use ($user) {
-                            $sub->whereIn('status', ['Approved']);
-                        });
+            $documents = $query
+                    ->whereHas('category', function ($q) use ($user) {
+                        $q->whereIn('department_id', [$user->department_id,(int)env('DEPARTMENT_ALL_ID')]);
+                    })
+                    ->where(function ($q) use ($user) {
+                        $q->whereIn('status', ['Approved']);
+                        
                     })
                     ->latest()
                     ->paginate(25);
-            
+                    
+
+                   
         } elseif (in_array('auditor', $roles)) {
             // Auditor sees approved + under review
             $documents = $query
@@ -177,7 +178,7 @@ class DocumentController extends Controller {
 
     /* ================= SUBMIT FOR REVIEW ================= */
 
-    public function submitForReview(Request $request,$id) {
+    public function submitForReview(Request $request, $id) {
         $document = Document::findOrFail($id);
         $user = $request->user();
 
