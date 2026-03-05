@@ -25,6 +25,47 @@ class DocumentController extends Controller {
                     'approver:id,name'
         ]);
 
+        /*         * ********************************************************************SORTING COLUMN FUNCTIONALITY SETTING ************************************************************* */
+        $sortColumn = $request->sort_column ?? 'created_at';
+        $sortDirection = $request->sort_direction ?? 'desc';
+        $sortColumn = $request->sort_column ?? 'created_at';
+        $sortDirection = $request->sort_direction ?? 'desc';
+
+        switch ($sortColumn) {
+
+            case 'category':
+
+                $query->leftJoin('document_categories as category', 'category.id', '=', 'documents.category_id')
+                        ->orderBy('category.name', $sortDirection)
+                        ->select('documents.*');
+
+                break;
+
+            case 'type':
+
+                $query->leftJoin('document_types', 'document_types.id', '=', 'documents.type_id')
+                        ->orderBy('document_types.name', $sortDirection)
+                        ->select('documents.*');
+
+                break;
+
+            case 'creator':
+
+                $query->leftJoin('creator', 'creator.id', '=', 'documents.created_by')
+                        ->orderBy('creator.name', $sortDirection)
+                        ->select('requests.*');
+
+                break;
+            
+             
+
+            default:
+
+                $query->orderBy($sortColumn, $sortDirection);
+        }
+        /*         * ********************************************************************SORTING COLUMN FUNCTIONALITY SETTING ************************************************************* */
+
+
         // 🔐 ROLE-BASED FILTERING
 
         if (in_array('Quality Manager', $roles)) {
@@ -70,33 +111,57 @@ class DocumentController extends Controller {
             $query
                     ->where('status', 'Approved');
         }
-         // 🎯 FILTERS
+
+
+        if ($request->search) {
+
+            $search = $request->search;
+
+            $query->where(function ($q) use ($search) {
+
+                $q->where('document_code', 'LIKE', "%{$search}%")
+                        ->orWhere('title', 'LIKE', "%{$search}%")
+                        ->orWhere('version', 'LIKE', "%{$search}%")
+                        ->orWhere('status', 'LIKE', "%{$search}%")
+                        ->orWhereHas('category', function ($sub) use ($search) {
+                            $sub->where('name', 'LIKE', "%{$search}%");
+                        })
+                        ->orWhereHas('type', function ($sub) use ($search) {
+                            $sub->where('name', 'LIKE', "%{$search}%");
+                        })
+                        ->orWhereHas('creator', function ($sub) use ($search) {
+                            $sub->where('name', 'LIKE', "%{$search}%");
+                        });
+            });
+        }
+
+
+        // 🎯 FILTERS
         if ($request->category_id) {
-            $query->where('category_id','=', $request->category_id);
+            $query->where('category_id', '=', $request->category_id);
         }
 
         if ($request->status_id) {
-            $query->where('status', '=',$request->status_id);
+            $query->where('status', '=', $request->status_id);
         }
-         if ($request->type_id) {
+        if ($request->type_id) {
             $query->where('type_id', $request->type_id);
         }
 
         // 🔥 Clone query BEFORE pagination for counts
         $countQuery = clone $query;
-        
-                    
-
+//            return response()->json([
+//                        'sql' => $query->toSql(),
+//                        'bindings' => $query->getBindings()
+//            ]);
         $documents = $query->latest()->paginate(25);
-       
-        
+
         // 🔥 COUNTS (respecting role + filters)
         $counts = [
             'total' => $countQuery->count(),
             'review' => (clone $countQuery)->where('status', 'Under Review')->count(),
             'approved' => (clone $countQuery)->where('status', 'Approved')->count(),
             'rejected' => (clone $countQuery)->where('status', 'Rejected')->count()
-            
         ];
 
         return response()->json([

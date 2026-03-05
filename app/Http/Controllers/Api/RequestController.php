@@ -61,7 +61,7 @@ class RequestController extends Controller {
 
                 $query->orderBy($sortColumn, $sortDirection);
         }
-
+/**********************************************************************SORTING COLUMN FUNCTIONALITY SETTING **************************************************************/
         //  ROLE FILTERING
         if (in_array('Admin', $roles)) {
 
