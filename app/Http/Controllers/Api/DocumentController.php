@@ -25,113 +25,219 @@ class DocumentController extends Controller {
                     'approver:id,name'
         ]);
 
+        /*         * ********************************************************************SORTING COLUMN FUNCTIONALITY SETTING ************************************************************* */
+        $sortColumn = $request->sort_column ?? 'created_at';
+        $sortDirection = $request->sort_direction ?? 'desc';
+        $sortColumn = $request->sort_column ?? 'created_at';
+        $sortDirection = $request->sort_direction ?? 'desc';
+
+        switch ($sortColumn) {
+
+            case 'category':
+
+                $query->leftJoin('document_categories as category', 'category.id', '=', 'documents.category_id')
+                        ->orderBy('category.name', $sortDirection)
+                        ->select('documents.*');
+
+                break;
+
+            case 'type':
+
+                $query->leftJoin('document_types', 'document_types.id', '=', 'documents.type_id')
+                        ->orderBy('document_types.name', $sortDirection)
+                        ->select('documents.*');
+
+                break;
+
+            case 'creator':
+
+                $query->leftJoin('creator', 'creator.id', '=', 'documents.created_by')
+                        ->orderBy('creator.name', $sortDirection)
+                        ->select('requests.*');
+
+                break;
+            
+             
+
+            default:
+
+                $query->orderBy($sortColumn, $sortDirection);
+        }
+        /*         * ********************************************************************SORTING COLUMN FUNCTIONALITY SETTING ************************************************************* */
+
+
         // 🔐 ROLE-BASED FILTERING
-        if (in_array('Admin', $roles)) {
-            // Admin sees everything
-            $documents = $query->paginate($perPage);
+
+        if (in_array('Quality Manager', $roles)) {
+            $query
+                    ->where(function ($q) use ($user) {
+
+                        $q->where('created_by', $user->id)
+                        ->orWhere(function ($sub) {
+                            $sub->whereIn('status', ['Approved', 'Under Review', 'Rejected']);
+                        });
+                    });
+        } elseif (in_array('Quality officer', $roles)) {
+
+            $query
+                    ->where(function ($q) use ($user) {
+
+                        $q->where('created_by', $user->id)
+                        ->orWhere(function ($sub) {
+                            $sub->whereIn('status', ['Approved']);
+                        });
+                    });
+
+//            return response()->json([
+//                        'sql' => $documents->toSql(),
+//                        'bindings' => $documents->getBindings()
+//            ]);
+        } elseif (in_array('User', $roles)) {
+
+
+            $query
+                    ->whereHas('category', function ($q) use ($user) {
+                        $q->whereIn('department_id', [$user->department_id, (int) env('DEPARTMENT_ALL_ID')]);
+                    })
+                    ->where(function ($q) {
+                        $q->whereIn('status', ['Approved']);
+                    });
         } elseif (in_array('auditor', $roles)) {
             // Auditor sees approved + under review
-            $documents = $query
-                    ->whereIn('status', ['Approved', 'Under Review'])
-                    ->paginate($perPage);
+            $query
+                    ->whereIn('status', ['Approved', 'Under Review']);
         } else {
             // Normal users see only approved documents
-            $documents = $query
-                    ->where('status', 'Approved')
-                    ->paginate($perPage);
+            $query
+                    ->where('status', 'Approved');
         }
+
+
+        if ($request->search) {
+
+            $search = $request->search;
+
+            $query->where(function ($q) use ($search) {
+
+                $q->where('document_code', 'LIKE', "%{$search}%")
+                        ->orWhere('title', 'LIKE', "%{$search}%")
+                        ->orWhere('version', 'LIKE', "%{$search}%")
+                        ->orWhere('status', 'LIKE', "%{$search}%")
+                        ->orWhereHas('category', function ($sub) use ($search) {
+                            $sub->where('name', 'LIKE', "%{$search}%");
+                        })
+                        ->orWhereHas('type', function ($sub) use ($search) {
+                            $sub->where('name', 'LIKE', "%{$search}%");
+                        })
+                        ->orWhereHas('creator', function ($sub) use ($search) {
+                            $sub->where('name', 'LIKE', "%{$search}%");
+                        });
+            });
+        }
+
+
+        // 🎯 FILTERS
+        if ($request->category_id) {
+            $query->where('category_id', '=', $request->category_id);
+        }
+
+        if ($request->status_id) {
+            $query->where('status', '=', $request->status_id);
+        }
+        if ($request->type_id) {
+            $query->where('type_id', $request->type_id);
+        }
+
+        // 🔥 Clone query BEFORE pagination for counts
+        $countQuery = clone $query;
+//            return response()->json([
+//                        'sql' => $query->toSql(),
+//                        'bindings' => $query->getBindings()
+//            ]);
+        $documents = $query->latest()->paginate(25);
+
+        // 🔥 COUNTS (respecting role + filters)
+        $counts = [
+            'total' => $countQuery->count(),
+            'review' => (clone $countQuery)->where('status', 'Under Review')->count(),
+            'approved' => (clone $countQuery)->where('status', 'Approved')->count(),
+            'rejected' => (clone $countQuery)->where('status', 'Rejected')->count()
+        ];
 
         return response()->json([
                     'success' => true,
                     'role' => $roles,
-                    'data' => $documents
+                    'data' => $documents->items(),
+                    'current_page' => $documents->currentPage(),
+                    'last_page' => $documents->lastPage(),
+                    'total' => $documents->total(),
+                    'per_page' => $documents->perPage(),
+                    'counts' => $counts
         ]);
     }
 
     /* ================= CREATE DOCUMENT ================= */
 
     public function store(Request $request) {
-        $request->validate([
-            'title' => 'required',
-            'department_id' => 'required',
-            'request_type_id' => 'required',
-             'attachments.*' => 'file|mimes:pdf,doc,docx,jpg,png|max:5120'
-            
+
+        $validated = $request->validate([
+            'document_code' => 'required|string|max:50|unique:documents,document_code',
+            'title' => 'required|string|max:255',
+            'category_id' => 'required|exists:document_categories,id',
+            'type_id' => 'required|exists:document_types,id',
+            'version' => 'required|string|max:10',
+            'effective_date' => 'required|date',
+            'file' => 'required|file|max:5120' // 5MB max
         ]);
-
-        DB::beginTransaction();
-
-        try {
-
-            $draftStatus = \App\Status::where('code', 'draft')->first();
-
-            $newRequest = \App\QmsRequest::create([
-                        'request_no' => 'REQ-' . time(),
-                        'title' => $request->title,
-                        'description' => $request->description,
-                        'department_id' => $request->department_id,
-                        'request_type_id' => $request->request_type_id,
-                        'status_id' => $draftStatus->id,
-                        'created_by' => $request->user()->id
-            ]);
-
-            /*
-              |--------------------------------------------------------------------------
-              | Create Folder Based on Request ID
-              |--------------------------------------------------------------------------
-             */
-
-            $folderPath = 'qms/requests/' . $newRequest->id;
-
-            if ($request->hasFile('attachments')) {
-
-                foreach ($request->file('attachments') as $file) {
-
-                  
-                    $fileName = uniqid() . '.' . $file->getClientOriginalExtension();
-
-
-                    $path = $file->storeAs(
-                            $folderPath,
-                            $fileName,
-                            'public'
-                    );
-
-                    \App\RequestAttachment::create([
-                        'request_id' => $newRequest->id,
-                        'file_name' => $fileName,
-                        'file_path' => $path,
-                        'uploaded_by' => $request->user()->id
-                    ]);
-                }
+        $type = DocumentType::find($request->type_id);
+        $file = $request->file('file');
+        $extension = strtolower($file->getClientOriginalExtension());
+        if ($type->name === 'Form') {
+            if ($extension !== 'pdf') {
+                return response()->json([
+                            'message' => 'Only PDF allowed for Form type'
+                                ], 422);
             }
-
-            \App\RequestHistory::create([
-                'request_id' => $newRequest->id,
-                'action' => 'Created',
-                'old_status' => null,
-                'new_status' => $draftStatus->id,
-                'changed_by' => $request->user()->id,
-                'remarks' => 'Request created'
-            ]);
-
-            DB::commit();
-
-            return response()->json([
-                        'success' => true,
-                        'message' => 'Request created successfully',
-                        'data' => $newRequest->load('attachments')
-            ]);
-        } catch (\Exception $e) {
-
-            DB::rollback();
-
-            return response()->json([
-                        'success' => false,
-                        'message' => 'Something went wrong',
-                        'error' => $e->getMessage()
-                            ], 500);
+        } else {
+            $allowed = ['pdf', 'doc', 'docx', 'jpg', 'jpeg'];
+            if (!in_array($extension, $allowed)) {
+                return response()->json([
+                            'message' => 'Invalid file type'
+                                ], 422);
+            }
         }
+
+
+        $typeName = strtolower(trim($type->name)); // form, policy, manual
+
+        $folder = 'documents/' . $typeName . '/' . $validated['document_code'];
+
+        $filename = 'v' . $validated['version'] . '.' . $extension;
+
+        if (Storage::exists($folder . '/' . $filename)) {
+            return response()->json([
+                        'message' => 'Version already exists.'
+                            ], 422);
+        }
+
+// Store in PRIVATE storage (NOT public)
+        $path = $file->storeAs($folder, $filename);
+
+        $document = Document::create(array_merge(
+                                $validated,
+                                [
+                                    'status' => 'Draft',
+                                    'approve_status' => 1,
+                                    'created_by' => Auth::id(),
+                                    'file_path' => $path
+                                ]
+        ));
+
+        return response()->json([
+                    'success' => true,
+                    'message' => 'Document created successfully',
+                    'data' => $document
+                        ], 201);
     }
 
     /* ================= UPDATE DOCUMENT ================= */
@@ -147,11 +253,11 @@ class DocumentController extends Controller {
             'review_date' => 'nullable|date'
         ]);
 
-        $document = Document::create(array_merge(
-                                $validated,
-                                [
-                                    'updated_by' => Auth::id()
-                                ]
+        $document->update(array_merge(
+                        $validated,
+                        [
+                            'updated_by' => Auth::id()
+                        ]
         ));
 
         return response()->json([
@@ -162,13 +268,31 @@ class DocumentController extends Controller {
 
     /* ================= SUBMIT FOR REVIEW ================= */
 
-    public function submitForReview($id) {
+    public function submitForReview(Request $request, $id) {
         $document = Document::findOrFail($id);
+        $user = $request->user();
 
-        $document->update([
-            'status' => 'Under Review',
-            'approve_status' => 2
-        ]);
+        // Get role names (admin, auditor, user)
+        $roles = $user->roles->pluck('name')->toArray();
+        if (in_array('Quality Manager', $roles)) {
+            $document->update([
+                'status' => 'Under Review',
+                'approve_status' => 2
+            ]);
+            $document->update([
+                'status' => 'Approved',
+                'approve_status' => 3,
+                'approved_by' => Auth::id(),
+                'approved_at' => now()
+            ]);
+        } else {
+            $document->update([
+                'status' => 'Under Review',
+                'approve_status' => 2
+            ]);
+        }
+
+
 
         return response()->json([
                     'success' => true,

@@ -13,7 +13,7 @@ class DocumentTypeController extends Controller {
      * List type
      */
     public function index(Request $request) {
-        $perPage = $request->get('per_page', 1);
+        $perPage = $request->get('per_page', 20);
 
         $categories = DocumentType::orderBy('id', 'desc')
                 ->paginate($perPage);

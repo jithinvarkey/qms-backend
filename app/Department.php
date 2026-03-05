@@ -21,4 +21,12 @@ class Department extends Model
     {
         return $this->hasMany(Request::class);
     }
+    
+    public function users(): BelongsToMany
+    {
+        return $this->hasMany(User::class);
+    }
+    public function category() {
+        return $this->hasMany(DocumentCategory::class);
+    }
 }

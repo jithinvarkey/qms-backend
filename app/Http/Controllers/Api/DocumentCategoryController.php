@@ -13,7 +13,7 @@ class DocumentCategoryController extends Controller {
      * List categories
      */
     public function index(Request $request) {
-        $perPage = $request->get('per_page', 1);
+        $perPage = $request->get('per_page', 20);
 
         $categories = DocumentCategory::orderBy('id', 'desc')
                 ->paginate($perPage);
@@ -30,12 +30,14 @@ class DocumentCategoryController extends Controller {
     public function store(Request $request) {
         $validated = $request->validate([
             'name' => 'required|string|max:100|unique:document_categories,name',
-            'description' => 'nullable|string'
+            'description' => 'nullable|string',
+            'department_id'=>'nullable|exists:departments,id'
         ]);
 
         $category = DocumentCategory::create([
                     'name' => $validated['name'],
                     'description' => $validated['description'] ?? null,
+                    'department_id' => $validated['department_id'] ?? null,
                     'isActive' => 1,
                     'created_by' => Auth::id()
         ]);
@@ -43,6 +45,7 @@ class DocumentCategoryController extends Controller {
         return response()->json([
                     'success' => true,
                     'message' => 'Category created successfully',
+                    'requestval'=>$request->all(),
                     'data' => $category
                         ], 201);
     }
@@ -55,7 +58,8 @@ class DocumentCategoryController extends Controller {
 
         $validated = $request->validate([
             'name' => 'required|string|max:100|unique:document_categories,name,' . $id,
-            'description' => 'nullable|string'
+            'description' => 'nullable|string',
+            'department_id'=>'nullable|exists:departments,id'
         ]);
 
         $category->update($validated);

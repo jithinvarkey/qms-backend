@@ -7,7 +7,6 @@ use App\RequestApproval;
 use App\QmsRequest;
 use App\Status;
 use Illuminate\Http\Request;
-use Auth;
 use DB;
 
 class RequestApprovalController extends Controller {
