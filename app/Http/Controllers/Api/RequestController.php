@@ -25,6 +25,42 @@ class RequestController extends Controller {
                     'creator',
                     'assigner'
         ]);
+/**********************************************************************SORTING COLUMN FUNCTIONALITY SETTING **************************************************************/
+        $sortColumn = $request->sort_column ?? 'created_at';
+        $sortDirection = $request->sort_direction ?? 'desc';
+        $sortColumn = $request->sort_column ?? 'created_at';
+        $sortDirection = $request->sort_direction ?? 'desc';
+
+        switch ($sortColumn) {
+
+            case 'requested_by':
+
+                $query->leftJoin('users as creator', 'creator.id', '=', 'requests.created_by')
+                        ->orderBy('creator.name', $sortDirection)
+                        ->select('requests.*');
+
+                break;
+
+            case 'department':
+
+                $query->leftJoin('departments', 'departments.id', '=', 'requests.department_id')
+                        ->orderBy('departments.name', $sortDirection)
+                        ->select('requests.*');
+
+                break;
+
+            case 'status':
+
+                $query->leftJoin('statuses', 'statuses.id', '=', 'requests.status')
+                        ->orderBy('statuses.code', $sortDirection)
+                        ->select('requests.*');
+
+                break;
+
+            default:
+
+                $query->orderBy($sortColumn, $sortDirection);
+        }
 
         //  ROLE FILTERING
         if (in_array('Admin', $roles)) {
@@ -53,6 +89,23 @@ class RequestController extends Controller {
             $query->where('created_by', $user->id);
         }
 
+//SEARCH functionality
+        if ($request->search) {
+
+            $search = $request->search;
+
+            $query->where(function ($q) use ($search) {
+
+                $q->where('request_no', 'LIKE', "%{$search}%")
+                        ->orWhere('title', 'LIKE', "%{$search}%")
+                        ->orWhere('description', 'LIKE', "%{$search}%")
+                        ->orWhereHas('creator', function ($sub) use ($search) {
+                            $sub->where('name', 'LIKE', "%{$search}%");
+                        });
+            });
+        }
+
+
         // 🎯 FILTERS
         if ($request->department_id) {
             $query->where('department_id', $request->department_id);
@@ -62,15 +115,16 @@ class RequestController extends Controller {
             $query->where('status', $request->status_id);
         }
 
+
         // 🔥 Clone query BEFORE pagination for counts
         $countQuery = clone $query;
-
+        
         $requests = $query->latest()->paginate(25);
 
         // 🔥 COUNTS (respecting role + filters)
         $counts = [
             'total' => $countQuery->count(),
-            'open' => (clone $countQuery)->whereIn('status', [1,2,4,5,6,7])->count(),
+            'open' => (clone $countQuery)->whereIn('status', [1, 2, 4, 5, 6, 7])->count(),
             'overdue' => (clone $countQuery)
                     ->where('due_date', '<', now())
                     ->whereNotIn('status', [8])
